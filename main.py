@@ -10,6 +10,15 @@ import logic.export_mach3 as export_mach3
 
 
 class MainWindow(QMainWindow):
+        # Rychlost pohybu (feedrate)
+        feed_layout = QHBoxLayout()
+        feed_layout.addWidget(QLabel("Rychlost (mm/min):"))
+        self.feedrate_spin = QDoubleSpinBox()
+        self.feedrate_spin.setRange(10, 10000)
+        self.feedrate_spin.setValue(1200)
+        self.feedrate_spin.setSingleStep(10)
+        feed_layout.addWidget(self.feedrate_spin)
+        controls_layout.addLayout(feed_layout)
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Bitmap Editor and Laser Code Generator")
@@ -86,17 +95,16 @@ class MainWindow(QMainWindow):
         controls_layout.addLayout(ascii_font_layout)
         self.ascii_font_family = 'Consolas'
 
-        # Pixel size for newspaper effect
-        self.pixel_size_combo = QComboBox()
-        self.pixel_size_combo.addItems(["1", "2", "4", "8", "16"])
-        self.pixel_size_combo.setCurrentIndex(0)
-        self.pixel_size_combo.setEditable(False)
-        self.pixel_size_combo.setMaximumWidth(60)
-        self.pixel_size_combo.currentIndexChanged.connect(self.on_slider_change)
-        pixel_layout = QHBoxLayout()
-        pixel_layout.addWidget(QLabel("Velikost bodu:"))
-        pixel_layout.addWidget(self.pixel_size_combo)
-        controls_layout.addLayout(pixel_layout)
+
+        # Velikost bodu laseru v mm
+        laser_dot_layout = QHBoxLayout()
+        laser_dot_layout.addWidget(QLabel("Velikost bodu laseru (mm):"))
+        self.laser_dot_size_spin = QDoubleSpinBox()
+        self.laser_dot_size_spin.setRange(0.01, 10.0)
+        self.laser_dot_size_spin.setValue(0.15)
+        self.laser_dot_size_spin.setSingleStep(0.01)
+        laser_dot_layout.addWidget(self.laser_dot_size_spin)
+        controls_layout.addLayout(laser_dot_layout)
 
         # Výsledný rozměr X (mm)
         size_layout = QHBoxLayout()
@@ -108,6 +116,22 @@ class MainWindow(QMainWindow):
         self.target_width_spin.valueChanged.connect(self.on_slider_change)
         size_layout.addWidget(self.target_width_spin)
         controls_layout.addLayout(size_layout)
+
+        # Nastavení bodu laseru (počátek X, Y v mm)
+        laser_origin_layout = QHBoxLayout()
+        laser_origin_layout.addWidget(QLabel("Počátek X (mm):"))
+        self.laser_origin_x_spin = QDoubleSpinBox()
+        self.laser_origin_x_spin.setRange(-1000, 1000)
+        self.laser_origin_x_spin.setValue(0.0)
+        self.laser_origin_x_spin.setSingleStep(0.1)
+        laser_origin_layout.addWidget(self.laser_origin_x_spin)
+        laser_origin_layout.addWidget(QLabel("Y (mm):"))
+        self.laser_origin_y_spin = QDoubleSpinBox()
+        self.laser_origin_y_spin.setRange(-1000, 1000)
+        self.laser_origin_y_spin.setValue(0.0)
+        self.laser_origin_y_spin.setSingleStep(0.1)
+        laser_origin_layout.addWidget(self.laser_origin_y_spin)
+        controls_layout.addLayout(laser_origin_layout)
         # Práh výkonu
         power_layout = QHBoxLayout()
         power_layout.addWidget(QLabel("Max. výkon (S):"))
@@ -189,7 +213,10 @@ class MainWindow(QMainWindow):
                 img = img.point(lambda x: 0 if x < 128 else 255, '1')
             # Apply dithering (novinový)
             if self.cb_dither.isChecked():
-                pixel_size = int(self.pixel_size_combo.currentText())
+                # Použijeme velikost bodu laseru v mm převedenou na pixely podle aktuálního rozlišení
+                width, target_width_mm = img.size[0], self.target_width_spin.value()
+                mm_per_pixel = target_width_mm / width if width > 0 else 1
+                pixel_size = max(1, int(round(self.laser_dot_size_spin.value() / mm_per_pixel)))
                 img = self.pixelate(img, pixel_size)
             # Invert colors
             if self.cb_invert.isChecked():
@@ -243,8 +270,95 @@ class MainWindow(QMainWindow):
                 physical_width = width * mm_per_pixel
                 physical_height = height * mm_per_pixel
                 max_power = int(self.max_power_spin.value())
-                export_mach3.export_image_to_mach3(self.current_image, output_path, mm_per_pixel, max_power)
-                self.label.setText(f"Export hotov: {output_path}\nRozměr: {physical_width:.2f} x {physical_height:.2f} mm\nMax. výkon: S{max_power}")
+                dot_size_mm = self.laser_dot_size_spin.value()
+                # Převzorkování obrázku podle velikosti bodu laseru
+                new_width = int(target_width_mm / dot_size_mm)
+                new_height = int((height / width) * new_width)
+                resampled_img = self.current_image.resize((new_width, new_height), Image.NEAREST)
+                feedrate = int(self.feedrate_spin.value())
+                export_mach3.export_image_to_mach3(
+                    resampled_img, output_path, dot_size_mm, max_power, feedrate
+                )
+                # Simulace výsledného obrázku (náhled laserování)
+                # Po exportu načíst G-code a vykreslit simulaci vypálení
+                info_text = f"Export hotov: {output_path}<br>Rozměr: {physical_width:.2f} x {physical_height:.2f} mm<br>Max. výkon: S{max_power}<br>Velikost bodu: {dot_size_mm} mm"
+                self.display_preview_image(resampled_img.convert('RGB'), info_text=info_text)
+
+    def simulate_from_gcode(self, gcode_path, dot_size_mm):
+        # Načte G-code a vykreslí simulaci vypálení (černé body tam, kde S > 0)
+        import re
+        width = height = None
+        mm_per_pixel = None
+        try:
+            with open(gcode_path, 'r') as f:
+                lines = f.readlines()
+            for line in lines:
+                if line.startswith('; width:'):
+                    m = re.search(r'width: (\d+)', line)
+                    if m:
+                        width = int(m.group(1))
+                if line.startswith('; height:'):
+                    m = re.search(r'height: (\d+)', line)
+                    if m:
+                        height = int(m.group(1))
+                if line.startswith('; mm_per_pixel:'):
+                    m = re.search(r'mm_per_pixel: ([\d\.]+)', line)
+                    if m:
+                        mm_per_pixel = float(m.group(1))
+                if width and height and mm_per_pixel:
+                    break
+            if not (width and height and mm_per_pixel):
+                raise ValueError('Nepodařilo se načíst rozměry z G-code.')
+            from PIL import Image, ImageDraw
+            img = Image.new('L', (width, height), 255)
+            draw = ImageDraw.Draw(img)
+            for line in lines:
+                if line.startswith('G1'):
+                    m = re.search(r'X([\d\.]+) Y([\d\.]+) M3 S(\d+)', line)
+                    if m:
+                        x_mm = float(m.group(1))
+                        y_mm = float(m.group(2))
+                        s = int(m.group(3))
+                        if s > 0:
+                            x = int(round(x_mm / mm_per_pixel))
+                            y = int(round(y_mm / mm_per_pixel))
+                            if 0 <= x < width and 0 <= y < height:
+                                draw.point((x, y), fill=0)
+            return img.convert('RGB')
+        except Exception as e:
+            from PIL import Image
+            # Vytvořit malý obrázek s chybovou hláškou
+            img = Image.new('RGB', (400, 100), (255, 255, 255))
+            try:
+                from PIL import ImageDraw
+                draw = ImageDraw.Draw(img)
+                draw.text((10, 40), f'Chyba simulace G-code: {e}', fill=(255,0,0))
+            except Exception:
+                pass
+            return img
+
+    def display_preview_image(self, img, info_text=None):
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        qimage = QImage.fromData(buffer.getvalue(), "PNG")
+        pixmap = QPixmap.fromImage(qimage)
+        self.label.setPixmap(pixmap)
+        self.label.setScaledContents(True)
+        # Pokud je info_text, zobrazit pod obrázkem (jako tooltip)
+        if info_text:
+            self.label.setToolTip(info_text)
+        # Kontrola, zda je obrázek prázdný (vše bílé)
+        if hasattr(img, 'getbbox') and img.getbbox() is None:
+            self.label.setToolTip("Výsledek je prázdný (žádné body k vypálení).")
+
+    def simulate_laser_result(self, img, max_power):
+        # Simulace: tmavší = více vypáleno, světlejší = méně
+        # Výsledek bude v odstínech šedi, invertovaný (černá = plný výkon)
+        gray = img.convert("L")
+        # Simulace: invertovat a zvýraznit kontrast podle výkonu
+        result = ImageOps.invert(gray)
+        result = ImageEnhance.Contrast(result).enhance(2.0)
+        return result.convert("RGB")
 
     def setup_export_button(self):
         self.export_button.clicked.connect(self.export_laser_code)
