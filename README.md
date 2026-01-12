@@ -1,0 +1,1 @@
+Generátor kodu pro laser z obrázku
