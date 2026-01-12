@@ -1,5 +1,7 @@
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFileDialog, QSlider, QCheckBox, QFontDialog, QSpinBox, QComboBox, QDoubleSpinBox)
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFileDialog, QSlider, QCheckBox, QFontDialog, QSpinBox, QComboBox, QDoubleSpinBox, QFrame
+)
 from PySide6.QtCore import Qt
 from PIL import Image, ImageEnhance, ImageOps
 import io
@@ -28,44 +30,19 @@ class MainWindow(QMainWindow):
         controls_widget.setLayout(controls_layout)
         main_layout.addWidget(controls_widget, 0)
 
-        # Rychlost pohybu (feedrate)
-        feed_layout = QHBoxLayout()
-        feed_layout.addWidget(QLabel("Rychlost (mm/min):"))
-        self.feedrate_spin = QDoubleSpinBox()
-        self.feedrate_spin.setRange(10, 10000)
-        self.feedrate_spin.setValue(1200)
-        self.feedrate_spin.setSingleStep(10)
-        feed_layout.addWidget(self.feedrate_spin)
-        controls_layout.addLayout(feed_layout)
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Bitmap Editor and Laser Code Generator")
-        self.setGeometry(100, 100, 1000, 700)
-        self.setWindowIcon(QIcon("assets/icon.png"))
+        # Helper: separator line
+        def add_separator():
+            line = QFrame()
+            line.setFrameShape(QFrame.HLine)
+            line.setFrameShadow(QFrame.Sunken)
+            controls_layout.addWidget(line)
 
-        # Central widget
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-
-        # Main layout: horizontal (left: controls, right: image)
-        main_layout = QHBoxLayout()
-        central_widget.setLayout(main_layout)
-
-        # Controls (left panel)
-        controls_widget = QWidget()
-        controls_layout = QVBoxLayout()
-        controls_widget.setLayout(controls_layout)
-        main_layout.addWidget(controls_widget, 0)
-
+        # Soubor
         self.load_button = QPushButton("Načíst obrázek")
         self.load_button.setStyleSheet("padding: 10px; font-size: 16px;")
         controls_layout.addWidget(self.load_button)
 
-        self.export_button = QPushButton("Export do Mach3")
-        self.export_button.setStyleSheet("padding: 10px; font-size: 16px;")
-        controls_layout.addWidget(self.export_button)
-
-        controls_layout.addSpacing(20)
+        add_separator()
 
         controls_layout.addWidget(QLabel("Jas"))
         self.brightness_slider = QSlider(Qt.Horizontal)
@@ -80,6 +57,8 @@ class MainWindow(QMainWindow):
         self.contrast_slider.setValue(0)
         self.contrast_slider.setStyleSheet("padding: 10px;")
         controls_layout.addWidget(self.contrast_slider)
+
+        add_separator()
 
         # Checkboxes for stepwise edits
         self.cb_grayscale = QCheckBox("Převod na odstíny šedi")
@@ -98,6 +77,8 @@ class MainWindow(QMainWindow):
         self.cb_ascii.stateChanged.connect(self.on_slider_change)
         self.cb_invert.stateChanged.connect(self.on_slider_change)
 
+        add_separator()
+
         # ASCII font/size controls
         ascii_font_layout = QHBoxLayout()
         self.ascii_font_button = QPushButton("Nastavit font")
@@ -113,6 +94,7 @@ class MainWindow(QMainWindow):
         controls_layout.addLayout(ascii_font_layout)
         self.ascii_font_family = 'Consolas'
 
+        add_separator()
 
         # Velikost bodu laseru v mm
         laser_dot_layout = QHBoxLayout()
@@ -129,7 +111,7 @@ class MainWindow(QMainWindow):
         size_layout.addWidget(QLabel("Výsledná šířka X (mm):"))
         self.target_width_spin = QDoubleSpinBox()
         self.target_width_spin.setRange(1, 1000)
-        self.target_width_spin.setValue(40.0)
+        self.target_width_spin.setValue(80.0)
         self.target_width_spin.setSingleStep(1.0)
         self.target_width_spin.valueChanged.connect(self.on_slider_change)
         size_layout.addWidget(self.target_width_spin)
@@ -160,6 +142,32 @@ class MainWindow(QMainWindow):
         self.max_power_spin.valueChanged.connect(self.on_slider_change)
         power_layout.addWidget(self.max_power_spin)
         controls_layout.addLayout(power_layout)
+
+        # Rychlost pohybu (feedrate) pro G1 (laserování)
+        feed_g1_layout = QHBoxLayout()
+        feed_g1_layout.addWidget(QLabel("Rychlost G1 (mm/min):"))
+        self.feedrate_g1_spin = QDoubleSpinBox()
+        self.feedrate_g1_spin.setRange(10, 10000)
+        self.feedrate_g1_spin.setValue(120)
+        self.feedrate_g1_spin.setSingleStep(10)
+        feed_g1_layout.addWidget(self.feedrate_g1_spin)
+        controls_layout.addLayout(feed_g1_layout)
+
+        # Rychlost pohybu (feedrate) pro G0 (přesuny)
+        feed_g0_layout = QHBoxLayout()
+        feed_g0_layout.addWidget(QLabel("Rychlost G0 (mm/min):"))
+        self.feedrate_g0_spin = QDoubleSpinBox()
+        self.feedrate_g0_spin.setRange(10, 10000)
+        self.feedrate_g0_spin.setValue(1500)
+        self.feedrate_g0_spin.setSingleStep(10)
+        feed_g0_layout.addWidget(self.feedrate_g0_spin)
+        controls_layout.addLayout(feed_g0_layout)
+
+        add_separator()
+
+        self.export_button = QPushButton("Export do Mach3")
+        self.export_button.setStyleSheet("padding: 12px; font-size: 16px;")
+        controls_layout.addWidget(self.export_button)
 
         controls_layout.addStretch(1)
 
@@ -293,9 +301,10 @@ class MainWindow(QMainWindow):
                 new_width = int(target_width_mm / dot_size_mm)
                 new_height = int((height / width) * new_width)
                 resampled_img = self.current_image.resize((new_width, new_height), Image.NEAREST)
-                feedrate = int(self.feedrate_spin.value())
+                feedrate_g1 = int(self.feedrate_g1_spin.value())
+                feedrate_g0 = int(self.feedrate_g0_spin.value())
                 export_mach3.export_image_to_mach3(
-                    resampled_img, output_path, dot_size_mm, max_power, feedrate
+                    resampled_img, output_path, dot_size_mm, max_power, feedrate_g1, feedrate_g0
                 )
                 # Simulace výsledného obrázku (náhled laserování)
                 # Po exportu načíst G-code a vykreslit simulaci vypálení

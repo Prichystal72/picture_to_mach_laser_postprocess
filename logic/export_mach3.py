@@ -1,6 +1,6 @@
 from PIL import Image
 
-def export_image_to_mach3(image: Image.Image, output_path: str, mm_per_pixel: float = 0.15, max_power: int = 1000, feedrate: int = 1200):
+def export_image_to_mach3(image: Image.Image, output_path: str, mm_per_pixel: float = 0.15, max_power: int = 1000, feedrate_g1: int = 1200, feedrate_g0: int = 3000):
     """
     Exportuje obrázek do G-code pro Mach3.
     mm_per_pixel: velikost bodu laseru v mm (průměr jednoho pixelu)
@@ -9,6 +9,9 @@ def export_image_to_mach3(image: Image.Image, output_path: str, mm_per_pixel: fl
     width, height = grayscale.size
     lines = []
     first_g1 = True
+    first_g0 = True
+    # Přidat G0 s F na začátek (návrat na počátek)
+    lines.append(f"G0 X0 Y0 F{feedrate_g0} ; rychly presun na pocatek")
     for y in range(height):
         ypos = y * mm_per_pixel
         for x in range(width):
@@ -16,7 +19,7 @@ def export_image_to_mach3(image: Image.Image, output_path: str, mm_per_pixel: fl
             pixel = grayscale.getpixel((x, y))
             power = int(max_power * (1 - pixel / 255))
             if first_g1:
-                lines.append(f"G1 X{xpos:.3f} Y{ypos:.3f} F{feedrate} M3 S{power} ; px({x},{y})")
+                lines.append(f"G1 X{xpos:.3f} Y{ypos:.3f} F{feedrate_g1} M3 S{power} ; px({x},{y})")
                 first_g1 = False
             else:
                 lines.append(f"G1 X{xpos:.3f} Y{ypos:.3f} M3 S{power} ; px({x},{y})")
