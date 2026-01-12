@@ -1,7 +1,5 @@
 from PySide6.QtGui import QIcon, QPixmap
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFileDialog, QSlider, QCheckBox, QFontDialog, QSpinBox, QComboBox, QDoubleSpinBox
-)
+from PySide6.QtWidgets import (QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QWidget, QFileDialog, QSlider, QCheckBox, QFontDialog, QSpinBox, QComboBox, QDoubleSpinBox)
 from PySide6.QtCore import Qt
 from PIL import Image, ImageEnhance, ImageOps
 import io
@@ -10,6 +8,26 @@ import logic.export_mach3 as export_mach3
 
 
 class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Bitmap Editor and Laser Code Generator")
+        self.setGeometry(100, 100, 1000, 700)
+        self.setWindowIcon(QIcon("assets/icon.png"))
+
+        # Central widget
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
+
+        # Main layout: horizontal (left: controls, right: image)
+        main_layout = QHBoxLayout()
+        central_widget.setLayout(main_layout)
+
+        # Controls (left panel)
+        controls_widget = QWidget()
+        controls_layout = QVBoxLayout()
+        controls_widget.setLayout(controls_layout)
+        main_layout.addWidget(controls_widget, 0)
+
         # Rychlost pohybu (feedrate)
         feed_layout = QHBoxLayout()
         feed_layout.addWidget(QLabel("Rychlost (mm/min):"))
